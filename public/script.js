@@ -102,12 +102,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let isPanning = false;
         let startX = 0;
         let startY = 0;
-
-        // Transformation matrix
-        let transform = {
-            x: 0,
-            y: 0
-        };
+        let offsetX = 0;
+        let offsetY = 0;
 
         // Update coordinates display
         const coordinatesDisplay = document.getElementById('coordinates');
@@ -124,6 +120,11 @@ document.addEventListener('DOMContentLoaded', () => {
             cursorCanvas.height = canvas.height;
             redrawCanvas();
         });
+
+        // Disable touch zooming and scrolling on mobile devices
+        canvasContainer.addEventListener('touchmove', function (e) {
+            e.preventDefault();
+        }, { passive: false });
 
         // Drawing state and current settings
         let drawing = false;
@@ -249,9 +250,9 @@ document.addEventListener('DOMContentLoaded', () => {
             Object.keys(otherCursors).forEach(function (userId) {
                 const cursor = otherCursors[userId];
                 if (cursor) {
-                    // Adjust for panning and transformation
-                    const x = cursor.x - transform.x;
-                    const y = cursor.y - transform.y;
+                    // Adjust for panning
+                    const x = cursor.x - offsetX;
+                    const y = cursor.y - offsetY;
 
                     if (x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
                         // Draw cursor
@@ -296,23 +297,20 @@ document.addEventListener('DOMContentLoaded', () => {
             context.strokeStyle = color;
             context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
 
-            // Apply transformations
-            context.translate(-transform.x, -transform.y);
-
             context.beginPath();
-            context.moveTo(points[0].x, points[0].y);
+            context.moveTo(points[0].x - offsetX, points[0].y - offsetY);
 
             for (let i = 1; i < points.length - 2; i++) {
-                const xc = (points[i].x + points[i + 1].x) / 2;
-                const yc = (points[i].y + points[i + 1].y) / 2;
-                context.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                const xc = (points[i].x + points[i + 1].x) / 2 - offsetX;
+                const yc = (points[i].y + points[i + 1].y) / 2 - offsetY;
+                context.quadraticCurveTo(points[i].x - offsetX, points[i].y - offsetY, xc, yc);
             }
             // Curve through the last two points
             context.quadraticCurveTo(
-                points[points.length - 2].x,
-                points[points.length - 2].y,
-                points[points.length - 1].x,
-                points[points.length - 1].y
+                points[points.length - 2].x - offsetX,
+                points[points.length - 2].y - offsetY,
+                points[points.length - 1].x - offsetX,
+                points[points.length - 1].y - offsetY
             );
             context.stroke();
             context.restore();
@@ -346,21 +344,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (e.touches.length === 1) {
                     drawing = true;
                     const coords = getCanvasCoordinates(e.touches[0]);
-                    current.points = [{ x: coords.x + transform.x, y: coords.y + transform.y }];
+                    current.points = [{ x: coords.x + offsetX, y: coords.y + offsetY }];
                 } else if (e.touches.length === 2) {
                     isPanning = true;
-                    startX = e.touches[0].clientX - transform.x;
-                    startY = e.touches[0].clientY - transform.y;
+                    startX = e.touches[0].clientX - offsetX;
+                    startY = e.touches[0].clientY - offsetY;
                     canvasContainer.style.cursor = 'grabbing';
                 }
             } else if (e.button === 0) { // Left mouse button
                 drawing = true;
                 const coords = getCanvasCoordinates(e);
-                current.points = [{ x: coords.x + transform.x, y: coords.y + transform.y }];
+                current.points = [{ x: coords.x + offsetX, y: coords.y + offsetY }];
             } else if (e.button === 2) { // Right mouse button
                 isPanning = true;
-                startX = e.clientX - transform.x;
-                startY = e.clientY - transform.y;
+                startX = e.clientX - offsetX;
+                startY = e.clientY - offsetY;
                 canvasContainer.style.cursor = 'grabbing';
             }
         }
@@ -411,9 +409,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.type === 'touchmove') {
                 if (e.touches.length === 1 && drawing) {
                     coords = getCanvasCoordinates(e.touches[0]);
-                    updateCoordinatesDisplay(coords.x + transform.x, coords.y + transform.y);
+                    updateCoordinatesDisplay(coords.x + offsetX, coords.y + offsetY);
 
-                    current.points.push({ x: coords.x + transform.x, y: coords.y + transform.y });
+                    current.points.push({ x: coords.x + offsetX, y: coords.y + offsetY });
 
                     drawSmoothLine(
                         current.points,
@@ -433,22 +431,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Emit cursor position
                     socket.emit('cursor move', {
-                        x: coords.x + transform.x,
-                        y: coords.y + transform.y,
+                        x: coords.x + offsetX,
+                        y: coords.y + offsetY,
                     });
                 } else if (e.touches.length === 2 && isPanning) {
-                    transform.x = e.touches[0].clientX - startX;
-                    transform.y = e.touches[0].clientY - startY;
+                    offsetX = e.touches[0].clientX - startX;
+                    offsetY = e.touches[0].clientY - startY;
 
                     // Redraw the canvas
                     redrawCanvas();
                 }
             } else {
                 coords = getCanvasCoordinates(e);
-                updateCoordinatesDisplay(coords.x + transform.x, coords.y + transform.y);
+                updateCoordinatesDisplay(coords.x + offsetX, coords.y + offsetY);
 
                 if (drawing) {
-                    current.points.push({ x: coords.x + transform.x, y: coords.y + transform.y });
+                    current.points.push({ x: coords.x + offsetX, y: coords.y + offsetY });
 
                     drawSmoothLine(
                         current.points,
@@ -468,12 +466,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Emit cursor position
                     socket.emit('cursor move', {
-                        x: coords.x + transform.x,
-                        y: coords.y + transform.y,
+                        x: coords.x + offsetX,
+                        y: coords.y + offsetY,
                     });
                 } else if (isPanning) {
-                    transform.x = e.clientX - startX;
-                    transform.y = e.clientY - startY;
+                    offsetX = e.clientX - startX;
+                    offsetY = e.clientY - startY;
 
                     // Redraw the canvas
                     redrawCanvas();
@@ -486,13 +484,13 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             if (e.type === 'touchstart' && e.touches.length === 2) {
                 isPanning = true;
-                startX = e.touches[0].clientX - transform.x;
-                startY = e.touches[0].clientY - transform.y;
+                startX = e.touches[0].clientX - offsetX;
+                startY = e.touches[0].clientY - offsetY;
                 canvasContainer.style.cursor = 'grabbing';
             } else if (e.button === 2) { // Right mouse button
                 isPanning = true;
-                startX = e.clientX - transform.x;
-                startY = e.clientY - transform.y;
+                startX = e.clientX - offsetX;
+                startY = e.clientY - offsetY;
                 canvasContainer.style.cursor = 'grabbing';
             }
         }
@@ -506,11 +504,11 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             if (isPanning) {
                 if (e.type === 'touchmove' && e.touches.length === 2) {
-                    transform.x = e.touches[0].clientX - startX;
-                    transform.y = e.touches[0].clientY - startY;
+                    offsetX = e.touches[0].clientX - startX;
+                    offsetY = e.touches[0].clientY - startY;
                 } else {
-                    transform.x = e.clientX - startX;
-                    transform.y = e.clientY - startY;
+                    offsetX = e.clientX - startX;
+                    offsetY = e.clientY - startY;
                 }
 
                 // Redraw the canvas
@@ -521,12 +519,6 @@ document.addEventListener('DOMContentLoaded', () => {
         function redrawCanvas() {
             // Clear the canvas
             context.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Save context state
-            context.save();
-
-            // Apply transformations
-            context.translate(-transform.x, -transform.y);
 
             // Redraw all stored lines
             drawnLines.forEach((line) => {
@@ -542,9 +534,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     false
                 );
             });
-
-            // Restore context state
-            context.restore();
         }
 
         // Update color and brush size
