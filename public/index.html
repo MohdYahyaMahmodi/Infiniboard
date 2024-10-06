@@ -48,6 +48,8 @@
             <label for="gradientSmoothness">Smoothness:</label>
             <input type="range" id="gradientSmoothness" min="0" max="1" step="0.01" value="0.5" title="Gradient Smoothness">
         </div>
+        <!-- Help Button -->
+        <button id="helpBtn" class="tool-button" title="Help"><i class="fas fa-question-circle"></i></button>
         <!-- Coordinates Display -->
         <div id="coordinates">X: 0, Y: 0</div>
     </div>
@@ -64,6 +66,25 @@
             <p>Please enter your username to start drawing:</p>
             <input type="text" id="usernameInput" placeholder="Your Name">
             <button id="usernameSubmit">Start Drawing</button>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="helpModal" class="modal">
+        <div class="modal-content">
+            <h2>How to Use Infiniboard</h2>
+            <p>
+                <strong>Desktop:</strong><br>
+                - Left-click to draw.<br>
+                - Right-click and drag to pan around.<br>
+                <br>
+                <strong>Mobile:</strong><br>
+                - Use one finger to draw.<br>
+                - Use two fingers to pan around.<br>
+                <br>
+                Use the toolbar to select tools, colors, and brush sizes.
+            </p>
+            <button id="helpCloseBtn">Close</button>
         </div>
     </div>
 

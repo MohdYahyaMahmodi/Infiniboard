@@ -1,5 +1,3 @@
-// server.js
-
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
@@ -8,9 +6,15 @@ const io = require('socket.io')(http);
 // Serve static files from the "public" directory
 app.use(express.static(__dirname + '/public'));
 
+// Store drawn lines
+let drawnLines = [];
+
 // Handle socket connections
 io.on('connection', (socket) => {
     console.log('A user connected: ' + socket.id);
+
+    // Send existing drawn lines to the new client
+    socket.emit('init canvas', drawnLines);
 
     // Receive user info from the client
     socket.on('set user', (data) => {
@@ -21,14 +25,20 @@ io.on('connection', (socket) => {
         console.log('User set:', socket.username, socket.userId);
     });
 
-    // Broadcast drawing data to other users
+    // Broadcast drawing data to other users and store it
     socket.on('drawing', (data) => {
         if (socket.username) {
-            socket.broadcast.emit('drawing', {
+            const lineData = {
                 username: socket.username,
                 userId: socket.userId,
                 ...data
-            });
+            };
+            // Store the line only if the drawing is finished
+            if (data.finished) {
+                drawnLines.push(lineData);
+            }
+            // Broadcast to others
+            socket.broadcast.emit('drawing', lineData);
         }
     });
 
@@ -47,6 +57,12 @@ io.on('connection', (socket) => {
     // Handle user disconnect
     socket.on('disconnect', () => {
         console.log('A user disconnected: ' + socket.id);
+        if (socket.username) {
+            // Notify other users
+            socket.broadcast.emit('user disconnected', {
+                userId: socket.userId
+            });
+        }
     });
 });
 
