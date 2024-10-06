@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Infiniboard - Real-time Collaborative Whiteboard</title>
+    <!-- Include Font Awesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <div id="toolbar">
+        <!-- Pen and Eraser Tool Buttons -->
+        <div class="tool-group">
+            <button id="penBtn" class="tool-button active" title="Pen Tool"><i class="fas fa-pen"></i></button>
+            <button id="eraserBtn" class="tool-button" title="Eraser Tool"><i class="fas fa-eraser"></i></button>
+        </div>
+        <!-- Color Presets -->
+        <div class="tool-group" id="colorPresets">
+            <!-- Preset colors -->
+            <div class="color-swatch" style="background-color: #000000;" data-color="#000000"></div>
+            <div class="color-swatch" style="background-color: #FF0000;" data-color="#FF0000"></div>
+            <div class="color-swatch" style="background-color: #00FF00;" data-color="#00FF00"></div>
+            <div class="color-swatch" style="background-color: #0000FF;" data-color="#0000FF"></div>
+            <div class="color-swatch" style="background-color: #FFFF00;" data-color="#FFFF00"></div>
+            <div class="color-swatch" style="background-color: #FF00FF;" data-color="#FF00FF"></div>
+            <div class="color-swatch" style="background-color: #00FFFF;" data-color="#00FFFF"></div>
+            <div class="color-swatch" style="background-color: #FFFFFF;" data-color="#FFFFFF"></div>
+        </div>
+        <!-- Color Picker -->
+        <input type="color" id="colorPicker" value="#000000" title="Custom Color">
+        <!-- Brush Size -->
+        <input type="range" id="brushSize" min="1" max="50" value="5" title="Brush Size">
+        <!-- Brush Types -->
+        <select id="brushType" title="Brush Type">
+            <option value="round">Round</option>
+            <option value="square">Square</option>
+        </select>
+        <!-- Gradient Toggle -->
+        <button id="gradientBtn" class="tool-button" title="Toggle Gradient"><i class="fas fa-fill-drip"></i></button>
+        <!-- Gradient Editor -->
+        <div id="gradientEditor" style="display: none;">
+            <input type="color" id="gradientStartColor" value="#000000" title="Gradient Start Color">
+            <input type="color" id="gradientEndColor" value="#FFFFFF" title="Gradient End Color">
+            <label for="gradientSmoothness">Smoothness:</label>
+            <input type="range" id="gradientSmoothness" min="0" max="1" step="0.01" value="0.5" title="Gradient Smoothness">
+        </div>
+        <!-- Coordinates Display -->
+        <div id="coordinates">X: 0, Y: 0</div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="whiteboard"></canvas>
+        <canvas id="cursorCanvas"></canvas>
+    </div>
+
+    <!-- Username Modal -->
+    <div id="usernameModal" class="modal">
+        <div class="modal-content">
+            <h2>Welcome to Infiniboard</h2>
+            <p>Please enter your username to start drawing:</p>
+            <input type="text" id="usernameInput" placeholder="Your Name">
+            <button id="usernameSubmit">Start Drawing</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
