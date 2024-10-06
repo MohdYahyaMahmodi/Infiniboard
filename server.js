@@ -51,6 +51,6 @@ io.on('connection', (socket) => {
 });
 
 // Start the server
-http.listen(3000, () => {
-    console.log('Listening on *:3000');
+http.listen(3010, () => {
+    console.log('Listening on *:3010');
 });
