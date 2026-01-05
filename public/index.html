@@ -1,95 +1,1078 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Infiniboard - Real-time Collaborative Whiteboard</title>
-    <!-- Include Font Awesome CDN -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <link rel="stylesheet" href="styles.css">
-    <link rel="icon" 
-      type="image/png" 
-      href="/favicon.png">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Infiniboard Ultra</title>
 
-    <div id="toolbar">
-        <!-- Pen and Eraser Tool Buttons -->
-        <div class="tool-group">
-            <button id="penBtn" class="tool-button active" title="Pen Tool"><i class="fas fa-pen"></i></button>
-            <button id="eraserBtn" class="tool-button" title="Eraser Tool"><i class="fas fa-eraser"></i></button>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons+Round"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+    <style>
+      body {
+        font-family: "Google Sans", "Inter", sans-serif;
+        background-color: #f0f2f5;
+        overflow: hidden;
+        touch-action: none;
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      * {
+        -webkit-tap-highlight-color: transparent;
+        user-select: none;
+      }
+
+      /* Google Material Styling */
+      .ui-panel {
+        background: rgba(255, 255, 255, 0.98); /* More opaque for visibility */
+        border: 1px solid #dadce0;
+        backdrop-filter: blur(8px);
+      }
+
+      .shadow-google {
+        box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.3),
+          0 4px 8px 3px rgba(60, 64, 67, 0.15);
+      }
+
+      .tool-btn {
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        color: #5f6368;
+      }
+      .tool-btn:hover {
+        background-color: #f1f3f4;
+        color: #202124;
+      }
+      .tool-btn.active {
+        background-color: #e8f0fe;
+        color: #1a73e8;
+      }
+      .tool-btn.active .material-icons-round {
+        color: #1a73e8;
+      }
+
+      /* Sliders */
+      input[type="range"] {
+        -webkit-appearance: none;
+        background: transparent;
+        width: 100%;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 16px;
+        width: 16px;
+        border-radius: 50%;
+        background: #1a73e8;
+        margin-top: -6px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        transition: transform 0.1s;
+      }
+      input[type="range"]::-webkit-slider-thumb:hover {
+        transform: scale(1.2);
+      }
+      input[type="range"]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 4px;
+        background: #dfe1e5;
+        border-radius: 2px;
+      }
+
+      /* Color Swatches */
+      .color-swatch {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: transform 0.2s;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+      .color-swatch:hover {
+        transform: scale(1.15);
+      }
+      .color-swatch.selected {
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 2px white inset;
+        transform: scale(1.1);
+      }
+    </style>
+  </head>
+  <body class="w-full h-full relative">
+    <canvas
+      id="canvas"
+      class="block absolute inset-0 z-0 cursor-crosshair"
+    ></canvas>
+
+    <div
+      id="loginModal"
+      class="fixed inset-0 z-[200] flex items-center justify-center bg-[#f0f2f5] transition-opacity duration-300"
+    >
+      <div
+        class="bg-white p-8 rounded-[28px] shadow-google w-full max-w-sm text-center border border-gray-100"
+      >
+        <div
+          class="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm"
+        >
+          <span class="material-icons-round text-4xl">brush</span>
         </div>
-        <!-- Color Presets -->
-        <div class="tool-group" id="colorPresets">
-            <!-- Preset colors -->
-            <div class="color-swatch" style="background-color: #000000;" data-color="#000000"></div>
-            <div class="color-swatch" style="background-color: #FF0000;" data-color="#FF0000"></div>
-            <div class="color-swatch" style="background-color: #00FF00;" data-color="#00FF00"></div>
-            <div class="color-swatch" style="background-color: #0000FF;" data-color="#0000FF"></div>
-            <div class="color-swatch" style="background-color: #FFFF00;" data-color="#FFFF00"></div>
-            <div class="color-swatch" style="background-color: #FF00FF;" data-color="#FF00FF"></div>
-            <div class="color-swatch" style="background-color: #00FFFF;" data-color="#00FFFF"></div>
-            <div class="color-swatch" style="background-color: #FFFFFF;" data-color="#FFFFFF"></div>
-        </div>
-        <!-- Color Picker -->
-        <input type="color" id="colorPicker" value="#000000" title="Custom Color">
-        <!-- Brush Size -->
-        <input type="range" id="brushSize" min="1" max="50" value="5" title="Brush Size">
-        <!-- Brush Types -->
-        <select id="brushType" title="Brush Type">
-            <option value="round">Round</option>
-            <option value="square">Square</option>
-        </select>
-        <!-- Gradient Toggle -->
-        <button id="gradientBtn" class="tool-button" title="Toggle Gradient"><i class="fas fa-fill-drip"></i></button>
-        <!-- Gradient Editor -->
-        <div id="gradientEditor" style="display: none;">
-            <input type="color" id="gradientStartColor" value="#000000" title="Gradient Start Color">
-            <input type="color" id="gradientEndColor" value="#FFFFFF" title="Gradient End Color">
-            <label for="gradientSmoothness">Smoothness:</label>
-            <input type="range" id="gradientSmoothness" min="0" max="1" step="0.01" value="0.5" title="Gradient Smoothness">
-        </div>
-        <!-- Help Button -->
-        <button id="helpBtn" class="tool-button" title="Help"><i class="fas fa-question-circle"></i></button>
-        <!-- Coordinates Display -->
-        <div id="coordinates">X: 0, Y: 0</div>
+        <h1 class="text-3xl font-normal text-gray-800 mb-2">Infiniboard</h1>
+        <p class="text-gray-500 text-sm mb-8">Collaborative infinite canvas</p>
+        <input
+          type="text"
+          id="usernameInput"
+          maxlength="15"
+          placeholder="Enter Nickname"
+          class="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-xl px-4 py-4 outline-none text-center text-lg mb-4 transition-all font-medium text-gray-700 placeholder-gray-400"
+        />
+        <button
+          id="joinBtn"
+          class="w-full bg-[#1a73e8] hover:bg-[#1557b0] text-white font-medium py-4 rounded-full shadow-lg hover:shadow-xl active:scale-95 transition-all text-lg"
+        >
+          Start Creating
+        </button>
+      </div>
     </div>
 
-    <div id="canvas-container">
-        <canvas id="whiteboard"></canvas>
-        <canvas id="cursorCanvas"></canvas>
-    </div>
-
-    <!-- Username Modal -->
-    <div id="usernameModal" class="modal">
-        <div class="modal-content">
-            <h2>Welcome to Infiniboard</h2>
-            <p>Please enter your username to start drawing:</p>
-            <input type="text" id="usernameInput" placeholder="Your Name">
-            <button id="usernameSubmit">Start Drawing</button>
+    <div
+      id="settingsModal"
+      class="fixed inset-0 z-[150] flex items-center justify-center bg-black/40 backdrop-blur-sm hidden opacity-0"
+    >
+      <div
+        class="bg-white p-6 rounded-[24px] shadow-2xl w-80 transform scale-95 transition-all duration-200"
+      >
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-xl font-medium text-gray-800">Settings</h2>
+          <button
+            id="closeSettings"
+            class="text-gray-400 hover:text-gray-700 bg-gray-100 rounded-full p-1"
+          >
+            <span class="material-icons-round">close</span>
+          </button>
         </div>
+
+        <label
+          class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 block"
+          >Display Name</label
+        >
+        <input
+          type="text"
+          id="settingsName"
+          class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 outline-none focus:border-blue-500 text-gray-700 mb-6 font-medium"
+        />
+
+        <label
+          class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3 block"
+          >Cursor Color</label
+        >
+        <div class="grid grid-cols-3 gap-3 mb-6" id="colorPresets"></div>
+
+        <button
+          id="saveSettings"
+          class="w-full bg-blue-600 text-white rounded-xl py-3 font-medium hover:bg-blue-700 transition shadow-md"
+        >
+          Save Changes
+        </button>
+      </div>
     </div>
 
-    <!-- Help Modal -->
-    <div id="helpModal" class="modal">
-        <div class="modal-content">
-            <h2>How to Use Infiniboard</h2>
-            <p>
-                <strong>Desktop:</strong><br>
-                - Left-click to draw.<br>
-                - Right-click and drag to pan around.<br>
-                <br>
-                <strong>Mobile:</strong><br>
-                - Use one finger to draw.<br>
-                - Use two fingers to pan around.<br>
-                <br>
-                Use the toolbar to select tools, colors, and brush sizes.
-            </p>
-            <button id="helpCloseBtn">Close</button>
+    <div
+      id="uiLayer"
+      class="fixed inset-0 pointer-events-none z-[100] opacity-0 transition-opacity duration-500"
+    >
+      <div class="pointer-events-auto absolute top-4 left-4 flex gap-3">
+        <div
+          class="ui-panel shadow-google rounded-full px-4 py-2 flex items-center gap-4"
+        >
+          <div
+            class="flex items-center gap-2 text-gray-500 border-r border-gray-200 pr-4"
+          >
+            <span class="material-icons-round text-[18px]">gps_fixed</span>
+            <span id="coordsDisplay" class="font-mono text-xs font-bold w-16"
+              >0, 0</span
+            >
+          </div>
+          <div class="flex items-center gap-2 text-gray-600">
+            <span class="material-icons-round text-[18px]">zoom_in</span>
+            <span id="scaleDisplay" class="font-medium text-sm">100%</span>
+          </div>
         </div>
+      </div>
+
+      <div
+        class="pointer-events-auto absolute top-4 right-4 flex flex-col items-end"
+      >
+        <div class="flex items-center gap-3">
+          <button
+            id="usersToggle"
+            class="ui-panel bg-white shadow-google w-12 h-12 rounded-full flex items-center justify-center hover:bg-gray-50 transition relative"
+          >
+            <span class="material-icons-round text-gray-600">group</span>
+            <span
+              id="userCount"
+              class="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold h-5 w-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm"
+              >0</span
+            >
+          </button>
+        </div>
+
+        <div
+          id="userPanel"
+          class="ui-panel rounded-2xl p-4 shadow-xl mt-2 w-56 hidden origin-top-right transition-all bg-white"
+        >
+          <h3
+            class="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider"
+          >
+            Active Users
+          </h3>
+          <ul id="userList" class="space-y-2 max-h-60 overflow-y-auto"></ul>
+        </div>
+      </div>
+
+      <div
+        class="pointer-events-auto absolute bottom-28 right-4 md:bottom-8 md:right-8 flex flex-col items-end z-30"
+      >
+        <div
+          id="chatWindow"
+          class="ui-panel rounded-2xl shadow-2xl w-80 h-96 mb-4 flex flex-col overflow-hidden hidden origin-bottom-right transform scale-90 opacity-0 transition-all duration-200 bg-white"
+        >
+          <div
+            class="bg-blue-50/80 p-4 flex justify-between items-center border-b border-gray-100"
+          >
+            <div class="flex items-center gap-2">
+              <span class="material-icons-round text-blue-600 text-sm"
+                >forum</span
+              >
+              <span class="font-bold text-gray-700 text-sm">Team Chat</span>
+            </div>
+            <button
+              id="minimizeChat"
+              class="text-gray-400 hover:text-gray-600 hover:bg-white rounded-full p-1 transition"
+            >
+              <span class="material-icons-round">expand_more</span>
+            </button>
+          </div>
+          <div
+            id="chatMessages"
+            class="flex-1 overflow-y-auto p-4 space-y-3 bg-white"
+          ></div>
+          <form
+            id="chatForm"
+            class="p-3 border-t border-gray-100 flex gap-2 bg-gray-50"
+          >
+            <input
+              type="text"
+              id="chatInput"
+              class="flex-1 bg-white border border-gray-200 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 text-gray-700 shadow-sm"
+              placeholder="Type a message..."
+            />
+          </form>
+        </div>
+
+        <button
+          id="chatToggle"
+          class="relative ui-panel bg-white hover:bg-gray-50 w-14 h-14 rounded-2xl shadow-google flex items-center justify-center transition-transform active:scale-95"
+        >
+          <span class="material-icons-round text-blue-600 text-2xl">chat</span>
+          <span
+            id="unreadBadge"
+            class="hidden absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm"
+            >0</span
+          >
+        </button>
+      </div>
+
+      <div
+        class="pointer-events-auto fixed bottom-8 left-1/2 transform -translate-x-1/2 w-auto max-w-[95vw] z-50"
+      >
+        <div
+          class="ui-panel bg-white shadow-google rounded-full p-2 flex items-center justify-center gap-2 sm:gap-3"
+        >
+          <div class="flex items-center gap-1 bg-gray-100/60 p-1 rounded-full">
+            <button
+              class="tool-btn w-10 h-10 rounded-full flex items-center justify-center active"
+              data-tool="pen"
+              title="Pen"
+            >
+              <span class="material-icons-round text-[20px]">edit</span>
+            </button>
+            <button
+              class="tool-btn w-10 h-10 rounded-full flex items-center justify-center"
+              data-tool="eraser"
+              title="Eraser"
+            >
+              <span class="material-icons-round text-[20px]"
+                >cleaning_services</span
+              >
+            </button>
+            <button
+              class="tool-btn w-10 h-10 rounded-full flex items-center justify-center"
+              data-tool="pan"
+              title="Pan"
+            >
+              <span class="material-icons-round text-[20px]">pan_tool</span>
+            </button>
+          </div>
+
+          <div class="w-px h-8 bg-gray-200"></div>
+
+          <div class="flex items-center gap-1 bg-gray-100/60 p-1 rounded-full">
+            <button
+              class="tool-btn w-10 h-10 rounded-full flex items-center justify-center"
+              data-tool="rect"
+            >
+              <span class="material-icons-round text-[20px]">crop_square</span>
+            </button>
+            <button
+              class="tool-btn w-10 h-10 rounded-full flex items-center justify-center"
+              data-tool="circle"
+            >
+              <span class="material-icons-round text-[20px]"
+                >radio_button_unchecked</span
+              >
+            </button>
+            <button
+              class="tool-btn w-10 h-10 rounded-full flex items-center justify-center"
+              data-tool="line"
+            >
+              <span
+                class="material-icons-round text-[20px] transform -rotate-45"
+                >remove</span
+              >
+            </button>
+          </div>
+
+          <div class="w-px h-8 bg-gray-200"></div>
+
+          <div class="flex items-center gap-3 px-2">
+            <div class="relative group cursor-pointer" title="Color">
+              <div
+                class="w-8 h-8 rounded-full border-2 border-white shadow-sm overflow-hidden ring-1 ring-gray-200"
+              >
+                <input
+                  type="color"
+                  id="inkColor"
+                  value="#000000"
+                  class="w-[150%] h-[150%] absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-0 border-0 cursor-pointer"
+                />
+              </div>
+            </div>
+            <div class="w-20 flex items-center" title="Brush Size">
+              <input type="range" id="sizeSlider" min="1" max="40" value="5" />
+            </div>
+          </div>
+
+          <div class="w-px h-8 bg-gray-200"></div>
+
+          <button
+            id="openSettingsBtn"
+            class="tool-btn w-10 h-10 rounded-full flex items-center justify-center hover:bg-gray-100"
+            title="Settings"
+          >
+            <span class="material-icons-round text-[22px] text-gray-600"
+              >settings</span
+            >
+          </button>
+        </div>
+      </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js"></script>
-</body>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        // --- Socket Safety Check ---
+        let socket;
+        try {
+          // If server is running, use it
+          socket = io();
+        } catch (e) {
+          console.warn("Socket.io not found. Entering Offline Mode.");
+          // MOCK SOCKET for offline testing so UI doesn't crash
+          socket = {
+            emit: (event, data) => console.log(`[Offline Emit] ${event}`, data),
+            on: (event, cb) => console.log(`[Offline Listen] ${event}`),
+          };
+        }
+
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d", { alpha: false });
+
+        // --- State ---
+        const state = {
+          isDrawing: false,
+          isPanning: false,
+          isSpacePressed: false,
+          tool: "pen",
+          inkColor: "#000000",
+          cursorColor: "#1a73e8",
+          size: 5,
+          username: "",
+          scale: 1,
+          panX: 0,
+          panY: 0,
+          startX: 0,
+          startY: 0,
+          lastX: 0,
+          lastY: 0,
+          lastTouchDist: 0,
+        };
+
+        const mouse = { rawX: 0, rawY: 0 };
+        let history = [];
+        let otherCursors = {};
+        let imageCache = {};
+
+        window.addEventListener("contextmenu", (e) => e.preventDefault());
+
+        function resize() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          render();
+        }
+        window.addEventListener("resize", resize);
+        resize();
+
+        const toWorld = (x, y) => ({
+          x: (x - state.panX) / state.scale,
+          y: (y - state.panY) / state.scale,
+        });
+
+        const lerp = (start, end, amt) => (1 - amt) * start + amt * end;
+
+        // Throttling
+        let lastDrawEmit = 0;
+        function canEmitDraw() {
+          const now = Date.now();
+          if (now - lastDrawEmit > 16) {
+            lastDrawEmit = now;
+            return true;
+          }
+          return false;
+        }
+
+        // --- Rendering ---
+        function render() {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.fillStyle = "#f0f2f5";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.setTransform(
+            state.scale,
+            0,
+            0,
+            state.scale,
+            state.panX,
+            state.panY
+          );
+
+          drawGrid();
+
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+
+          history.forEach((item) => {
+            if (item.type === "image") drawImageItem(item);
+            else if (item.type === "line") drawLineItem(item);
+            else drawShapeItem(item);
+          });
+
+          if (
+            state.isDrawing &&
+            ["rect", "circle", "line"].includes(state.tool)
+          ) {
+            const wPos = toWorld(mouse.rawX, mouse.rawY);
+            drawShapeItem(
+              {
+                type: state.tool === "line" ? "line_shape" : state.tool,
+                x: state.startX,
+                y: state.startY,
+                w: wPos.x - state.startX,
+                h: wPos.y - state.startY,
+                color: state.inkColor,
+                size: state.size,
+              },
+              true
+            );
+          }
+
+          drawCursors();
+          requestAnimationFrame(render);
+        }
+
+        function drawGrid() {
+          const gridSize = 50;
+          const left = -state.panX / state.scale;
+          const top = -state.panY / state.scale;
+          const right = (canvas.width - state.panX) / state.scale;
+          const bottom = (canvas.height - state.panY) / state.scale;
+
+          ctx.lineWidth = 1 / state.scale;
+          ctx.strokeStyle = "rgba(0,0,0,0.06)";
+          ctx.beginPath();
+
+          const startX = Math.floor(left / gridSize) * gridSize;
+          const startY = Math.floor(top / gridSize) * gridSize;
+
+          for (let x = startX; x < right; x += gridSize) {
+            ctx.moveTo(x, top);
+            ctx.lineTo(x, bottom);
+          }
+          for (let y = startY; y < bottom; y += gridSize) {
+            ctx.moveTo(left, y);
+            ctx.lineTo(right, y);
+          }
+          ctx.stroke();
+        }
+
+        function drawLineItem(item) {
+          ctx.beginPath();
+          ctx.strokeStyle = item.tool === "eraser" ? "#f0f2f5" : item.color;
+          ctx.lineWidth = item.size;
+          if (item.x0 === item.x1 && item.y0 === item.y1) {
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.arc(item.x0, item.y0, item.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.moveTo(item.x0, item.y0);
+            ctx.lineTo(item.x1, item.y1);
+            ctx.stroke();
+          }
+        }
+
+        function drawShapeItem(item, isGhost = false) {
+          ctx.beginPath();
+          ctx.strokeStyle = item.color;
+          ctx.lineWidth = item.size;
+          if (isGhost) {
+            ctx.setLineDash([6, 6]);
+            ctx.strokeStyle = item.color + "99";
+          } else ctx.setLineDash([]);
+
+          if (item.type === "rect")
+            ctx.strokeRect(item.x, item.y, item.w, item.h);
+          else if (item.type === "circle") {
+            const r = Math.sqrt(item.w * item.w + item.h * item.h);
+            ctx.beginPath();
+            ctx.arc(item.x, item.y, r, 0, Math.PI * 2);
+            ctx.stroke();
+          } else if (item.type === "line_shape") {
+            ctx.beginPath();
+            ctx.moveTo(item.x, item.y);
+            ctx.lineTo(item.x + item.w, item.y + item.h);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+        }
+
+        function drawImageItem(item) {
+          if (!imageCache[item.id]) {
+            const img = new Image();
+            img.src = item.src;
+            imageCache[item.id] = img;
+          } else if (imageCache[item.id].complete)
+            ctx.drawImage(
+              imageCache[item.id],
+              item.x,
+              item.y,
+              item.width,
+              item.height
+            );
+        }
+
+        function drawCursors() {
+          const now = Date.now();
+          const scale = 1 / state.scale;
+
+          for (let id in otherCursors) {
+            const c = otherCursors[id];
+            if (now - c.timestamp > 60000) continue;
+            c.x = lerp(c.x, c.tx, 0.2);
+            c.y = lerp(c.y, c.ty, 0.2);
+
+            ctx.beginPath();
+            ctx.moveTo(c.x, c.y);
+            ctx.lineTo(c.x + 8 * scale, c.y + 24 * scale);
+            ctx.lineTo(c.x + 12 * scale, c.y + 14 * scale);
+            ctx.lineTo(c.x + 22 * scale, c.y + 12 * scale);
+            ctx.closePath();
+
+            ctx.fillStyle = c.color || "#000000";
+            ctx.fill();
+            ctx.lineWidth = 2 * scale;
+            ctx.strokeStyle = "white";
+            ctx.stroke();
+
+            if (c.username) {
+              ctx.font = `bold ${12 * scale}px Inter, sans-serif`;
+              const width = ctx.measureText(c.username).width;
+              ctx.fillStyle = c.color || "#000000";
+              ctx.fillRect(
+                c.x + 16 * scale,
+                c.y + 16 * scale,
+                width + 10 * scale,
+                20 * scale
+              );
+              ctx.fillStyle = "white";
+              ctx.fillText(c.username, c.x + 21 * scale, c.y + 30 * scale);
+            }
+          }
+        }
+
+        // --- Interaction ---
+        function handleStart(x, y, isRight) {
+          const w = toWorld(x, y);
+          mouse.rawX = x;
+          mouse.rawY = y;
+          if (state.isSpacePressed || state.tool === "pan" || isRight) {
+            state.isPanning = true;
+            canvas.style.cursor = "grabbing";
+          } else {
+            state.isDrawing = true;
+            state.startX = w.x;
+            state.startY = w.y;
+            state.lastX = w.x;
+            state.lastY = w.y;
+          }
+        }
+
+        function handleMove(x, y) {
+          const w = toWorld(x, y);
+
+          // Update Coords Display
+          document.getElementById("coordsDisplay").innerText = `${Math.round(
+            w.x
+          )}, ${Math.round(w.y)}`;
+
+          if (state.isPanning) {
+            state.panX += x - mouse.rawX;
+            state.panY += y - mouse.rawY;
+          } else if (state.isDrawing && canEmitDraw()) {
+            if (["pen", "eraser"].includes(state.tool)) {
+              const d = {
+                type: "line",
+                x0: state.lastX,
+                y0: state.lastY,
+                x1: w.x,
+                y1: w.y,
+                color: state.inkColor,
+                size: state.size,
+                tool: state.tool,
+              };
+              history.push(d);
+              socket.emit("draw_line", d);
+              state.lastX = w.x;
+              state.lastY = w.y;
+            }
+          }
+          mouse.rawX = x;
+          mouse.rawY = y;
+          throttleCursor(w.x, w.y);
+        }
+
+        function handleEnd() {
+          if (
+            state.isDrawing &&
+            ["rect", "circle", "line"].includes(state.tool)
+          ) {
+            const w = toWorld(mouse.rawX, mouse.rawY);
+            const d = {
+              type: state.tool === "line" ? "line_shape" : state.tool,
+              x: state.startX,
+              y: state.startY,
+              w: w.x - state.startX,
+              h: w.y - state.startY,
+              color: state.inkColor,
+              size: state.size,
+            };
+            if (Math.abs(d.w) > 2 || Math.abs(d.h) > 2) {
+              history.push(d);
+              socket.emit("draw_shape", d);
+            }
+          }
+          state.isDrawing = false;
+          state.isPanning = false;
+          canvas.style.cursor = state.tool === "pan" ? "grab" : "crosshair";
+        }
+
+        // Listeners
+        canvas.addEventListener("mousedown", (e) =>
+          handleStart(e.clientX, e.clientY, e.button === 2)
+        );
+        window.addEventListener("mousemove", (e) => {
+          // Always handle move to update coords
+          handleMove(e.clientX, e.clientY);
+        });
+        window.addEventListener("mouseup", handleEnd);
+
+        // Touch
+        canvas.addEventListener(
+          "touchstart",
+          (e) => {
+            e.preventDefault();
+            if (e.touches.length === 1)
+              handleStart(e.touches[0].clientX, e.touches[0].clientY, false);
+            else if (e.touches.length === 2) {
+              state.isPanning = true;
+              state.isDrawing = false;
+              const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              );
+              state.lastTouchDist = dist;
+              mouse.rawX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+              mouse.rawY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            }
+          },
+          { passive: false }
+        );
+
+        canvas.addEventListener(
+          "touchmove",
+          (e) => {
+            e.preventDefault();
+            if (e.touches.length === 1)
+              handleMove(e.touches[0].clientX, e.touches[0].clientY);
+            else if (e.touches.length === 2 && state.isPanning) {
+              const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+              const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+              const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              );
+              state.panX += cx - mouse.rawX;
+              state.panY += cy - mouse.rawY;
+              const zoom = dist / state.lastTouchDist;
+              const wPos = toWorld(cx, cy);
+              state.scale = Math.min(Math.max(0.1, state.scale * zoom), 10);
+              state.panX = cx - wPos.x * state.scale;
+              state.panY = cy - wPos.y * state.scale;
+              mouse.rawX = cx;
+              mouse.rawY = cy;
+              state.lastTouchDist = dist;
+              updateStats();
+            }
+          },
+          { passive: false }
+        );
+        canvas.addEventListener("touchend", (e) => {
+          if (e.touches.length === 0) handleEnd();
+        });
+
+        canvas.addEventListener(
+          "wheel",
+          (e) => {
+            e.preventDefault();
+            const zoom = Math.exp(e.deltaY * -0.001);
+            const wPos = toWorld(e.clientX, e.clientY);
+            state.scale = Math.min(Math.max(0.1, state.scale * zoom), 10);
+            state.panX = e.clientX - wPos.x * state.scale;
+            state.panY = e.clientY - wPos.y * state.scale;
+            updateStats();
+            handleMove(e.clientX, e.clientY); // Update coords instantly
+          },
+          { passive: false }
+        );
+
+        window.addEventListener("keydown", (e) => {
+          if (e.code === "Space" && !state.isSpacePressed) {
+            state.isSpacePressed = true;
+            canvas.style.cursor = "grab";
+          }
+        });
+        window.addEventListener("keyup", (e) => {
+          if (e.code === "Space") {
+            state.isSpacePressed = false;
+            canvas.style.cursor = state.tool === "pan" ? "grab" : "crosshair";
+            state.isPanning = false;
+          }
+        });
+
+        // UI Logic
+        const presets = [
+          "#ea4335",
+          "#fbbc04",
+          "#34a853",
+          "#4285f4",
+          "#9334e6",
+          "#000000",
+        ];
+        const settingsModal = document.getElementById("settingsModal");
+
+        document.getElementById("joinBtn").addEventListener("click", () => {
+          const name =
+            document.getElementById("usernameInput").value.trim() || "Artist";
+          state.username = name;
+          state.cursorColor = presets[Math.floor(Math.random() * 4)];
+          socket.emit("join_user", {
+            username: name,
+            color: state.cursorColor,
+          });
+
+          gsap.to("#loginModal", {
+            opacity: 0,
+            duration: 0.3,
+            onComplete: () => {
+              document.getElementById("loginModal").remove();
+              // --- VISIBILITY FIX: Change opacity instead of display ---
+              const ui = document.getElementById("uiLayer");
+              ui.style.opacity = "1";
+
+              gsap.from(".ui-panel", {
+                y: 30,
+                opacity: 0,
+                stagger: 0.1,
+                ease: "power2.out",
+                duration: 0.6,
+              });
+            },
+          });
+        });
+
+        document.querySelectorAll(".tool-btn").forEach((btn) => {
+          if (!btn.dataset.tool) return;
+          btn.addEventListener("click", () => {
+            document
+              .querySelectorAll(".tool-btn")
+              .forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            state.tool = btn.dataset.tool;
+            canvas.style.cursor = state.tool === "pan" ? "grab" : "crosshair";
+          });
+        });
+
+        document
+          .getElementById("inkColor")
+          .addEventListener("input", (e) => (state.inkColor = e.target.value));
+        document
+          .getElementById("sizeSlider")
+          .addEventListener(
+            "input",
+            (e) => (state.size = parseInt(e.target.value))
+          );
+
+        document
+          .getElementById("openSettingsBtn")
+          .addEventListener("click", () => {
+            document.getElementById("settingsName").value = state.username;
+            renderPresets();
+            settingsModal.classList.remove("hidden");
+            gsap.to(settingsModal, { opacity: 1 });
+            gsap.fromTo(
+              settingsModal.children[0],
+              { scale: 0.95 },
+              { scale: 1, duration: 0.2, ease: "back.out" }
+            );
+          });
+
+        document
+          .getElementById("closeSettings")
+          .addEventListener("click", () => {
+            gsap.to(settingsModal, {
+              opacity: 0,
+              duration: 0.2,
+              onComplete: () => settingsModal.classList.add("hidden"),
+            });
+          });
+
+        function renderPresets() {
+          const container = document.getElementById("colorPresets");
+          container.innerHTML = "";
+          presets.forEach((color) => {
+            const div = document.createElement("div");
+            div.className = `color-swatch ${
+              state.cursorColor === color ? "selected" : ""
+            }`;
+            div.style.backgroundColor = color;
+            div.addEventListener("click", () => {
+              state.cursorColor = color;
+              renderPresets();
+            });
+            container.appendChild(div);
+          });
+        }
+
+        document
+          .getElementById("saveSettings")
+          .addEventListener("click", () => {
+            const newName = document
+              .getElementById("settingsName")
+              .value.trim();
+            if (newName) state.username = newName;
+            socket.emit("update_profile", {
+              username: state.username,
+              color: state.cursorColor,
+            });
+            gsap.to(settingsModal, {
+              opacity: 0,
+              duration: 0.2,
+              onComplete: () => settingsModal.classList.add("hidden"),
+            });
+          });
+
+        // Chat & Users
+        let unreadCount = 0;
+        let isChatOpen = false;
+        const chatWin = document.getElementById("chatWindow");
+        const badge = document.getElementById("unreadBadge");
+
+        function toggleChat() {
+          isChatOpen = !isChatOpen;
+          if (isChatOpen) {
+            unreadCount = 0;
+            updateBadge();
+            chatWin.classList.remove("hidden");
+            document.getElementById("chatToggle").classList.add("scale-0");
+            gsap.fromTo(
+              chatWin,
+              { opacity: 0, scale: 0.9, y: 10 },
+              {
+                opacity: 1,
+                scale: 1,
+                y: 0,
+                duration: 0.3,
+                ease: "back.out(1.2)",
+              }
+            );
+          } else {
+            gsap.to(chatWin, {
+              opacity: 0,
+              scale: 0.9,
+              y: 10,
+              duration: 0.2,
+              onComplete: () => chatWin.classList.add("hidden"),
+            });
+            document.getElementById("chatToggle").classList.remove("scale-0");
+          }
+        }
+
+        function updateBadge() {
+          badge.innerText = unreadCount;
+          if (unreadCount > 0) {
+            badge.classList.remove("hidden");
+            gsap.fromTo(badge, { scale: 1.5 }, { scale: 1, duration: 0.2 });
+          } else badge.classList.add("hidden");
+        }
+
+        document
+          .getElementById("chatToggle")
+          .addEventListener("click", toggleChat);
+        document
+          .getElementById("minimizeChat")
+          .addEventListener("click", toggleChat);
+
+        document.getElementById("usersToggle").addEventListener("click", () => {
+          const p = document.getElementById("userPanel");
+          if (p.classList.contains("hidden")) {
+            p.classList.remove("hidden");
+            gsap.fromTo(
+              p,
+              { opacity: 0, y: -10, scale: 0.95 },
+              { opacity: 1, y: 0, scale: 1, duration: 0.2 }
+            );
+          } else {
+            gsap.to(p, {
+              opacity: 0,
+              y: -10,
+              scale: 0.95,
+              duration: 0.15,
+              onComplete: () => p.classList.add("hidden"),
+            });
+          }
+        });
+
+        document.getElementById("chatForm").addEventListener("submit", (e) => {
+          e.preventDefault();
+          const i = document.getElementById("chatInput");
+          if (i.value.trim()) {
+            socket.emit("chat_message", i.value);
+            // Local echo if using offline mode
+            if (!io) {
+              const div = document.createElement("div");
+              div.className = "mb-3 text-xs";
+              div.innerHTML = `<div class="flex items-center gap-2 mb-1"><span class="font-bold text-gray-800">${
+                state.username
+              }</span><span class="text-gray-400 text-[10px]">${new Date().toLocaleTimeString()}</span></div><div class="bg-blue-50 p-2 rounded-lg rounded-tr-none text-gray-700 inline-block border border-blue-100">${
+                i.value
+              }</div>`;
+              document.getElementById("chatMessages").appendChild(div);
+            }
+            i.value = "";
+          }
+        });
+
+        // Socket Listeners
+        socket.on("init_history", (h) => (history = h));
+        socket.on("draw_line", (d) => history.push(d));
+        socket.on("draw_shape", (d) => history.push(d));
+        socket.on("draw_image", (d) => history.push(d));
+
+        socket.on("update_users", (u) => {
+          document.getElementById("userCount").innerText = u.length;
+          const list = document.getElementById("userList");
+          list.innerHTML = "";
+          u.forEach((user) => {
+            list.innerHTML += `<li class="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition"><div class="w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm" style="background:${user.color}"></div><span class="text-sm text-gray-700 font-medium">${user.username}</span></li>`;
+          });
+        });
+
+        socket.on("chat_message", (d) => {
+          const div = document.createElement("div");
+          div.className = "mb-3 text-xs";
+          div.innerHTML = `<div class="flex items-center gap-2 mb-1"><span class="font-bold text-gray-800">${d.user}</span><span class="text-gray-400 text-[10px]">${d.time}</span></div><div class="bg-gray-50 p-2 rounded-lg rounded-tl-none text-gray-700 inline-block border border-gray-100">${d.text}</div>`;
+          const box = document.getElementById("chatMessages");
+          box.appendChild(div);
+          box.scrollTop = box.scrollHeight;
+          if (!isChatOpen) {
+            unreadCount++;
+            updateBadge();
+          }
+        });
+
+        socket.on("cursor_update", (d) => {
+          if (!otherCursors[d.id])
+            otherCursors[d.id] = {
+              x: d.x,
+              y: d.y,
+              tx: d.x,
+              ty: d.y,
+              timestamp: Date.now(),
+            };
+          const c = otherCursors[d.id];
+          c.tx = d.x;
+          c.ty = d.y;
+          c.timestamp = Date.now();
+          if (d.color) c.color = d.color;
+          if (d.username) c.username = d.username;
+        });
+
+        let lastThrottle = 0;
+        function throttleCursor(x, y) {
+          const now = Date.now();
+          if (now - lastThrottle > 40) {
+            socket.emit("cursor_move", { x, y });
+            lastThrottle = now;
+          }
+        }
+
+        function updateStats() {
+          document.getElementById("scaleDisplay").innerText =
+            Math.round(state.scale * 100) + "%";
+        }
+        requestAnimationFrame(render);
+      });
+    </script>
+  </body>
 </html>

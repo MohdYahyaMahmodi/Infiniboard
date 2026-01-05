@@ -1,640 +1,615 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // Function to set a cookie
-    function setCookie(name, value, days) {
-        var expires = "";
-        if (days) {
-            var date = new Date();
-            date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
-            expires = "; expires=" + date.toUTCString();
-        }
-        document.cookie = name + "=" + (value || "") + expires + "; path=/";
+document.addEventListener("DOMContentLoaded", () => {
+  const socket = io();
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d", { alpha: false });
+
+  // --- State ---
+  const state = {
+    isDrawing: false,
+    isPanning: false,
+    isSpacePressed: false,
+    tool: "pen",
+    inkColor: "#000000",
+    cursorColor: "#1a73e8",
+    size: 5,
+    username: "",
+    scale: 1,
+    panX: 0,
+    panY: 0,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastY: 0,
+    lastTouchDist: 0,
+  };
+
+  const mouse = { rawX: 0, rawY: 0 };
+  let history = [];
+  let otherCursors = {};
+  let imageCache = {};
+
+  window.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    render();
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  const toWorld = (x, y) => ({
+    x: (x - state.panX) / state.scale,
+    y: (y - state.panY) / state.scale,
+  });
+
+  const lerp = (start, end, amt) => (1 - amt) * start + amt * end;
+
+  // Throttling
+  let lastDrawEmit = 0;
+  function canEmitDraw() {
+    const now = Date.now();
+    if (now - lastDrawEmit > 16) {
+      lastDrawEmit = now;
+      return true;
+    }
+    return false;
+  }
+
+  // --- Rendering ---
+  function render() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#f0f2f5";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.setTransform(state.scale, 0, 0, state.scale, state.panX, state.panY);
+
+    drawGrid();
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    history.forEach((item) => {
+      if (item.type === "image") drawImageItem(item);
+      else if (item.type === "line") drawLineItem(item);
+      else drawShapeItem(item);
+    });
+
+    if (state.isDrawing && ["rect", "circle", "line"].includes(state.tool)) {
+      const wPos = toWorld(mouse.rawX, mouse.rawY);
+      drawShapeItem(
+        {
+          type: state.tool === "line" ? "line_shape" : state.tool,
+          x: state.startX,
+          y: state.startY,
+          w: wPos.x - state.startX,
+          h: wPos.y - state.startY,
+          color: state.inkColor,
+          size: state.size,
+        },
+        true
+      );
     }
 
-    // Function to get a cookie
-    function getCookie(name) {
-        var nameEQ = name + "=";
-        var ca = document.cookie.split(';');
-        for (var i = 0; i < ca.length; i++) {
-            var c = ca[i];
-            while (c.charAt(0) == ' ') c = c.substring(1, c.length);
-            if (c.indexOf(nameEQ) == 0)
-                return c.substring(nameEQ.length, c.length);
-        }
-        return null;
+    drawCursors();
+    requestAnimationFrame(render);
+  }
+
+  function drawGrid() {
+    const gridSize = 50;
+    const left = -state.panX / state.scale;
+    const top = -state.panY / state.scale;
+    const right = (canvas.width - state.panX) / state.scale;
+    const bottom = (canvas.height - state.panY) / state.scale;
+
+    ctx.lineWidth = 1 / state.scale;
+    ctx.strokeStyle = "rgba(0,0,0,0.06)";
+    ctx.beginPath();
+
+    const startX = Math.floor(left / gridSize) * gridSize;
+    const startY = Math.floor(top / gridSize) * gridSize;
+
+    for (let x = startX; x < right; x += gridSize) {
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
     }
-
-    // Generate unique userId and store in cookie
-    let userId = getCookie('userId');
-    if (!userId) {
-        userId = generateUUID();
-        setCookie('userId', userId, 365);
+    for (let y = startY; y < bottom; y += gridSize) {
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
     }
+    ctx.stroke();
+  }
 
-    let username = getCookie('username');
-    if (!username) {
-        // Show the modal
-        const modal = document.getElementById('usernameModal');
-        modal.style.display = 'block';
-
-        const usernameInput = document.getElementById('usernameInput');
-        const usernameSubmit = document.getElementById('usernameSubmit');
-
-        usernameSubmit.addEventListener('click', () => {
-            const tempElement = document.createElement('div');
-            tempElement.textContent = usernameInput.value.trim();
-            username = tempElement.textContent;
-            if (username) {
-                setCookie('username', username, 365);
-                modal.style.display = 'none';
-                initializeApp(username, userId);
-            } else {
-                alert('Please enter a valid username.');
-            }
-        });
+  function drawLineItem(item) {
+    ctx.beginPath();
+    ctx.strokeStyle = item.tool === "eraser" ? "#f0f2f5" : item.color;
+    ctx.lineWidth = item.size;
+    if (item.x0 === item.x1 && item.y0 === item.y1) {
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.arc(item.x0, item.y0, item.size / 2, 0, Math.PI * 2);
+      ctx.fill();
     } else {
-        initializeApp(username, userId);
+      ctx.moveTo(item.x0, item.y0);
+      ctx.lineTo(item.x1, item.y1);
+      ctx.stroke();
     }
+  }
 
-    // Function to generate UUID
-    function generateUUID() {
-        var d = new Date().getTime();
-        var d2 =
-            (performance && performance.now && performance.now() * 1000) || 0;
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-            /[xy]/g,
-            function (c) {
-                var r = Math.random() * 16;
-                if (d > 0) {
-                    r = ((d + r) % 16) | 0;
-                    d = Math.floor(d / 16);
-                } else {
-                    r = ((d2 + r) % 16) | 0;
-                    d2 = Math.floor(d2 / 16);
-                }
-                return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-            }
+  function drawShapeItem(item, isGhost = false) {
+    ctx.beginPath();
+    ctx.strokeStyle = item.color;
+    ctx.lineWidth = item.size;
+    if (isGhost) {
+      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = item.color + "99";
+    } else ctx.setLineDash([]);
+
+    if (item.type === "rect") ctx.strokeRect(item.x, item.y, item.w, item.h);
+    else if (item.type === "circle") {
+      const r = Math.sqrt(item.w * item.w + item.h * item.h);
+      ctx.beginPath();
+      ctx.arc(item.x, item.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (item.type === "line_shape") {
+      ctx.beginPath();
+      ctx.moveTo(item.x, item.y);
+      ctx.lineTo(item.x + item.w, item.y + item.h);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  function drawImageItem(item) {
+    if (!imageCache[item.id]) {
+      const img = new Image();
+      img.src = item.src;
+      imageCache[item.id] = img;
+    } else if (imageCache[item.id].complete)
+      ctx.drawImage(
+        imageCache[item.id],
+        item.x,
+        item.y,
+        item.width,
+        item.height
+      );
+  }
+
+  function drawCursors() {
+    const now = Date.now();
+    const scale = 1 / state.scale;
+
+    for (let id in otherCursors) {
+      const c = otherCursors[id];
+      if (now - c.timestamp > 60000) continue;
+      c.x = lerp(c.x, c.tx, 0.2);
+      c.y = lerp(c.y, c.ty, 0.2);
+
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y);
+      ctx.lineTo(c.x + 8 * scale, c.y + 24 * scale);
+      ctx.lineTo(c.x + 12 * scale, c.y + 14 * scale);
+      ctx.lineTo(c.x + 22 * scale, c.y + 12 * scale);
+      ctx.closePath();
+
+      ctx.fillStyle = c.color || "#000000";
+      ctx.fill();
+      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = "white";
+      ctx.stroke();
+
+      if (c.username) {
+        ctx.font = `bold ${12 * scale}px Inter, sans-serif`;
+        const width = ctx.measureText(c.username).width;
+        ctx.fillStyle = c.color || "#000000";
+        ctx.fillRect(
+          c.x + 16 * scale,
+          c.y + 16 * scale,
+          width + 10 * scale,
+          20 * scale
         );
+        ctx.fillStyle = "white";
+        ctx.fillText(c.username, c.x + 21 * scale, c.y + 30 * scale);
+      }
     }
+  }
 
-    // Main application initialization
-    function initializeApp(username, userId) {
-        const socket = io();
+  // --- Interaction ---
+  function handleStart(x, y, isRight) {
+    const w = toWorld(x, y);
+    mouse.rawX = x;
+    mouse.rawY = y;
+    if (state.isSpacePressed || state.tool === "pan" || isRight) {
+      state.isPanning = true;
+      canvas.style.cursor = "grabbing";
+    } else {
+      state.isDrawing = true;
+      state.startX = w.x;
+      state.startY = w.y;
+      state.lastX = w.x;
+      state.lastY = w.y;
+    }
+  }
 
-        // Send sanitized username and userId to the server
-        socket.emit('set user', { username: username, userId: userId });
+  function handleMove(x, y) {
+    const w = toWorld(x, y);
 
-        // Set up canvases and contexts
-        const canvas = document.getElementById('whiteboard');
-        const context = canvas.getContext('2d');
+    // Update Coords Display
+    document.getElementById("coordsDisplay").innerText = `${Math.round(
+      w.x
+    )}, ${Math.round(w.y)}`;
 
-        const cursorCanvas = document.getElementById('cursorCanvas');
-        const cursorContext = cursorCanvas.getContext('2d');
-
-        const canvasContainer = document.getElementById('canvas-container');
-
-        // Set initial canvas size
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight - document.getElementById('toolbar').offsetHeight; // Adjust for toolbar height
-        cursorCanvas.width = canvas.width;
-        cursorCanvas.height = canvas.height;
-
-        // Panning variables
-        let isPanning = false;
-        let startX = 0;
-        let startY = 0;
-        let offsetX = 0;
-        let offsetY = 0;
-
-        // Update coordinates display
-        const coordinatesDisplay = document.getElementById('coordinates');
-
-        function updateCoordinatesDisplay(x, y) {
-            coordinatesDisplay.textContent = `X: ${Math.round(x)}, Y: ${Math.round(y)}`;
-        }
-
-        // Adjust canvas size on window resize
-        window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight - document.getElementById('toolbar').offsetHeight;
-            cursorCanvas.width = canvas.width;
-            cursorCanvas.height = canvas.height;
-            redrawCanvas();
-        });
-
-        // Disable touch zooming and scrolling on mobile devices
-        canvasContainer.addEventListener('touchmove', function (e) {
-            e.preventDefault();
-        }, { passive: false });
-
-        // Drawing state and current settings
-        let drawing = false;
-        let current = {
-            color: document.getElementById('colorPicker').value,
-            size: document.getElementById('brushSize').value,
-            brushType: 'round',
-            gradient: false,
-            gradientStartColor: '#000000',
-            gradientEndColor: '#FFFFFF',
-            gradientSmoothness: 0.5,
-            points: [],
-            tool: 'pen' // 'pen' or 'eraser'
+    if (state.isPanning) {
+      state.panX += x - mouse.rawX;
+      state.panY += y - mouse.rawY;
+    } else if (state.isDrawing && canEmitDraw()) {
+      if (["pen", "eraser"].includes(state.tool)) {
+        const d = {
+          type: "line",
+          x0: state.lastX,
+          y0: state.lastY,
+          x1: w.x,
+          y1: w.y,
+          color: state.inkColor,
+          size: state.size,
+          tool: state.tool,
         };
-
-        // Event listeners for drawing
-        canvas.addEventListener('mousedown', onMouseDown, false);
-        canvas.addEventListener('mouseup', onMouseUp, false);
-        canvas.addEventListener('mouseout', onMouseUp, false);
-        canvas.addEventListener('mousemove', throttle(onMouseMove, 10), false);
-
-        // Touch support
-        canvas.addEventListener('touchstart', onMouseDown, { passive: false });
-        canvas.addEventListener('touchend', onMouseUp, false);
-        canvas.addEventListener('touchcancel', onMouseUp, false);
-        canvas.addEventListener('touchmove', throttle(onMouseMove, 10), { passive: false });
-
-        // Panning events
-        canvasContainer.addEventListener('contextmenu', (e) => e.preventDefault()); // Disable context menu
-        canvasContainer.addEventListener('mousedown', onPanStart, false);
-        canvasContainer.addEventListener('mouseup', onPanEnd, false);
-        canvasContainer.addEventListener('mousemove', onPanMove, false);
-
-        canvasContainer.addEventListener('touchstart', onPanStart, { passive: false });
-        canvasContainer.addEventListener('touchend', onPanEnd, false);
-        canvasContainer.addEventListener('touchmove', onPanMove, { passive: false });
-
-        // Toolbar input listeners
-        document
-            .getElementById('colorPicker')
-            .addEventListener('change', onColorUpdate, false);
-        document
-            .getElementById('brushSize')
-            .addEventListener('change', onBrushSizeUpdate, false);
-        document
-            .getElementById('brushType')
-            .addEventListener('change', onBrushTypeUpdate, false);
-        document
-            .getElementById('gradientBtn')
-            .addEventListener('click', onGradientToggle, false);
-
-        // Gradient editor inputs
-        document
-            .getElementById('gradientStartColor')
-            .addEventListener('change', onGradientStartColorUpdate, false);
-        document
-            .getElementById('gradientEndColor')
-            .addEventListener('change', onGradientEndColorUpdate, false);
-        document
-            .getElementById('gradientSmoothness')
-            .addEventListener('change', onGradientSmoothnessUpdate, false);
-
-        // Pen and Eraser tool buttons
-        document.getElementById('penBtn').addEventListener('click', () => {
-            current.tool = 'pen';
-            updateActiveTool();
-        });
-        document.getElementById('eraserBtn').addEventListener('click', () => {
-            current.tool = 'eraser';
-            updateActiveTool();
-        });
-
-        // Help button
-        document.getElementById('helpBtn').addEventListener('click', () => {
-            document.getElementById('helpModal').style.display = 'block';
-        });
-        document.getElementById('helpCloseBtn').addEventListener('click', () => {
-            document.getElementById('helpModal').style.display = 'none';
-        });
-
-        // Update active tool button styling
-        function updateActiveTool() {
-            document.getElementById('penBtn').classList.toggle('active', current.tool === 'pen');
-            document.getElementById('eraserBtn').classList.toggle('active', current.tool === 'eraser');
-        }
-
-        // Color presets
-        const colorSwatches = document.querySelectorAll('.color-swatch');
-        colorSwatches.forEach(swatch => {
-            swatch.addEventListener('click', () => {
-                const color = swatch.getAttribute('data-color');
-                current.color = color;
-                document.getElementById('colorPicker').value = color;
-                updateSelectedSwatch(swatch);
-            });
-        });
-
-        function updateSelectedSwatch(selectedSwatch) {
-            colorSwatches.forEach(swatch => {
-                swatch.classList.toggle('selected', swatch === selectedSwatch);
-            });
-        }
-
-        // Socket events
-        socket.on('drawing', onDrawingEvent);
-        socket.on('cursor move', onCursorMove);
-        socket.on('user disconnected', (data) => {
-            delete otherCursors[data.userId];
-        });
-        socket.on('init canvas', (lines) => {
-            drawnLines = lines;
-            redrawCanvas();
-        });
-
-        // Store other users' cursors
-        let otherCursors = {};
-
-        // Draw other users' cursors
-        function drawCursors() {
-            // Clear the cursor canvas
-            cursorContext.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
-
-            Object.keys(otherCursors).forEach(function (userId) {
-                const cursor = otherCursors[userId];
-                if (cursor) {
-                    // Adjust for panning
-                    const x = cursor.x - offsetX;
-                    const y = cursor.y - offsetY;
-
-                    if (x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
-                        // Draw cursor
-                        cursorContext.beginPath();
-                        cursorContext.arc(
-                            x,
-                            y,
-                            5,
-                            0,
-                            2 * Math.PI,
-                            false
-                        );
-                        cursorContext.fillStyle = 'rgba(0,0,0,0.5)';
-                        cursorContext.fill();
-
-                        // Draw username
-                        cursorContext.font = '12px Arial';
-                        cursorContext.fillStyle = '#000';
-                        cursorContext.fillText(
-                            cursor.username,
-                            x + 8,
-                            y - 8
-                        );
-                    }
-                }
-            });
-
-            // Request the next frame
-            requestAnimationFrame(drawCursors);
-        }
-
-        drawCursors();
-
-        // Draw a line on the canvas using smoothing
-        function drawSmoothLine(points, color, size, brushType, gradient, gradientColors, gradientSmoothness, tool, emit, finished) {
-            if (points.length < 2) return;
-
-            context.save();
-            context.lineWidth = size;
-            context.lineCap = brushType;
-            context.lineJoin = brushType;
-            context.strokeStyle = color;
-            context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
-
-            context.beginPath();
-            context.moveTo(points[0].x - offsetX, points[0].y - offsetY);
-
-            for (let i = 1; i < points.length - 2; i++) {
-                const xc = (points[i].x + points[i + 1].x) / 2 - offsetX;
-                const yc = (points[i].y + points[i + 1].y) / 2 - offsetY;
-                context.quadraticCurveTo(points[i].x - offsetX, points[i].y - offsetY, xc, yc);
-            }
-            // Curve through the last two points
-            context.quadraticCurveTo(
-                points[points.length - 2].x - offsetX,
-                points[points.length - 2].y - offsetY,
-                points[points.length - 1].x - offsetX,
-                points[points.length - 1].y - offsetY
-            );
-            context.stroke();
-            context.restore();
-
-            if (!emit) {
-                return;
-            }
-
-            const data = {
-                points: points.map(p => ({ x: p.x, y: p.y })),
-                color: color,
-                size: size,
-                brushType: brushType,
-                gradient: gradient,
-                gradientColors: gradientColors,
-                gradientSmoothness: gradientSmoothness,
-                tool: tool,
-                finished: finished
-            };
-
-            socket.emit('drawing', data);
-        }
-
-        // Store drawn lines for redrawing during panning
-        let drawnLines = [];
-
-        // Mouse and touch event handlers
-        function onMouseDown(e) {
-            e.preventDefault();
-            if (e.type === 'touchstart') {
-                if (e.touches.length === 1) {
-                    drawing = true;
-                    const coords = getCanvasCoordinates(e.touches[0]);
-                    current.points = [{ x: coords.x + offsetX, y: coords.y + offsetY }];
-                } else if (e.touches.length === 2) {
-                    isPanning = true;
-                    startX = e.touches[0].clientX - offsetX;
-                    startY = e.touches[0].clientY - offsetY;
-                    canvasContainer.style.cursor = 'grabbing';
-                }
-            } else if (e.button === 0) { // Left mouse button
-                drawing = true;
-                const coords = getCanvasCoordinates(e);
-                current.points = [{ x: coords.x + offsetX, y: coords.y + offsetY }];
-            } else if (e.button === 2) { // Right mouse button
-                isPanning = true;
-                startX = e.clientX - offsetX;
-                startY = e.clientY - offsetY;
-                canvasContainer.style.cursor = 'grabbing';
-            }
-        }
-
-        function onMouseUp(e) {
-            e.preventDefault();
-            if (drawing) {
-                // Emit the final stroke with 'finished' flag
-                drawSmoothLine(
-                    current.points,
-                    current.color,
-                    current.size,
-                    current.brushType,
-                    current.gradient,
-                    {
-                        start: current.gradientStartColor,
-                        end: current.gradientEndColor
-                    },
-                    current.gradientSmoothness,
-                    current.tool,
-                    true,
-                    true // Drawing is finished
-                );
-                // Store the line
-                drawnLines.push({
-                    points: current.points.slice(),
-                    color: current.color,
-                    size: current.size,
-                    brushType: current.brushType,
-                    gradient: current.gradient,
-                    gradientColors: {
-                        start: current.gradientStartColor,
-                        end: current.gradientEndColor
-                    },
-                    gradientSmoothness: current.gradientSmoothness,
-                    tool: current.tool,
-                });
-                current.points = [];
-            }
-            drawing = false;
-            isPanning = false;
-            canvasContainer.style.cursor = 'grab';
-        }
-
-        function onMouseMove(e) {
-            e.preventDefault();
-            let coords;
-            if (e.type === 'touchmove') {
-                if (e.touches.length === 1 && drawing) {
-                    coords = getCanvasCoordinates(e.touches[0]);
-                    updateCoordinatesDisplay(coords.x + offsetX, coords.y + offsetY);
-
-                    current.points.push({ x: coords.x + offsetX, y: coords.y + offsetY });
-
-                    drawSmoothLine(
-                        current.points,
-                        current.color,
-                        current.size,
-                        current.brushType,
-                        current.gradient,
-                        {
-                            start: current.gradientStartColor,
-                            end: current.gradientEndColor
-                        },
-                        current.gradientSmoothness,
-                        current.tool,
-                        true,
-                        false // Drawing is in progress
-                    );
-
-                    // Emit cursor position
-                    socket.emit('cursor move', {
-                        x: coords.x + offsetX,
-                        y: coords.y + offsetY,
-                    });
-                } else if (e.touches.length === 2 && isPanning) {
-                    offsetX = e.touches[0].clientX - startX;
-                    offsetY = e.touches[0].clientY - startY;
-
-                    // Redraw the canvas
-                    redrawCanvas();
-                }
-            } else {
-                coords = getCanvasCoordinates(e);
-                updateCoordinatesDisplay(coords.x + offsetX, coords.y + offsetY);
-
-                if (drawing) {
-                    current.points.push({ x: coords.x + offsetX, y: coords.y + offsetY });
-
-                    drawSmoothLine(
-                        current.points,
-                        current.color,
-                        current.size,
-                        current.brushType,
-                        current.gradient,
-                        {
-                            start: current.gradientStartColor,
-                            end: current.gradientEndColor
-                        },
-                        current.gradientSmoothness,
-                        current.tool,
-                        true,
-                        false // Drawing is in progress
-                    );
-
-                    // Emit cursor position
-                    socket.emit('cursor move', {
-                        x: coords.x + offsetX,
-                        y: coords.y + offsetY,
-                    });
-                } else if (isPanning) {
-                    offsetX = e.clientX - startX;
-                    offsetY = e.clientY - startY;
-
-                    // Redraw the canvas
-                    redrawCanvas();
-                }
-            }
-        }
-
-        // Panning functions
-        function onPanStart(e) {
-            e.preventDefault();
-            if (e.type === 'touchstart' && e.touches.length === 2) {
-                isPanning = true;
-                startX = e.touches[0].clientX - offsetX;
-                startY = e.touches[0].clientY - offsetY;
-                canvasContainer.style.cursor = 'grabbing';
-            } else if (e.button === 2) { // Right mouse button
-                isPanning = true;
-                startX = e.clientX - offsetX;
-                startY = e.clientY - offsetY;
-                canvasContainer.style.cursor = 'grabbing';
-            }
-        }
-
-        function onPanEnd(e) {
-            isPanning = false;
-            canvasContainer.style.cursor = 'grab';
-        }
-
-        function onPanMove(e) {
-            e.preventDefault();
-            if (isPanning) {
-                if (e.type === 'touchmove' && e.touches.length === 2) {
-                    offsetX = e.touches[0].clientX - startX;
-                    offsetY = e.touches[0].clientY - startY;
-                } else {
-                    offsetX = e.clientX - startX;
-                    offsetY = e.clientY - startY;
-                }
-
-                // Redraw the canvas
-                redrawCanvas();
-            }
-        }
-
-        function redrawCanvas() {
-            // Clear the canvas
-            context.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Redraw all stored lines
-            drawnLines.forEach((line) => {
-                drawSmoothLine(
-                    line.points,
-                    line.color,
-                    line.size,
-                    line.brushType,
-                    line.gradient,
-                    line.gradientColors,
-                    line.gradientSmoothness,
-                    line.tool,
-                    false
-                );
-            });
-        }
-
-        // Update color and brush size
-        function onColorUpdate(e) {
-            current.color = e.target.value;
-            updateSelectedSwatch(null);
-        }
-
-        function onBrushSizeUpdate(e) {
-            current.size = e.target.value;
-        }
-
-        function onBrushTypeUpdate(e) {
-            current.brushType = e.target.value;
-        }
-
-        function onGradientToggle() {
-            current.gradient = !current.gradient;
-            document.getElementById('gradientBtn').classList.toggle('active', current.gradient);
-            document.getElementById('gradientEditor').style.display = current.gradient ? 'flex' : 'none';
-        }
-
-        function onGradientStartColorUpdate(e) {
-            current.gradientStartColor = e.target.value;
-        }
-
-        function onGradientEndColorUpdate(e) {
-            current.gradientEndColor = e.target.value;
-        }
-
-        function onGradientSmoothnessUpdate(e) {
-            current.gradientSmoothness = parseFloat(e.target.value);
-        }
-
-        // Handle drawing events from other users
-        function onDrawingEvent(data) {
-            // If drawing is in progress, render incrementally
-            drawSmoothLine(
-                data.points,
-                data.color,
-                data.size,
-                data.brushType,
-                data.gradient,
-                data.gradientColors,
-                data.gradientSmoothness,
-                data.tool,
-                false
-            );
-
-            // If drawing is finished, store the line
-            if (data.finished) {
-                drawnLines.push({
-                    points: data.points,
-                    color: data.color,
-                    size: data.size,
-                    brushType: data.brushType,
-                    gradient: data.gradient,
-                    gradientColors: data.gradientColors,
-                    gradientSmoothness: data.gradientSmoothness,
-                    tool: data.tool,
-                });
-            }
-        }
-
-        // Handle cursor move events from other users
-        function onCursorMove(data) {
-            otherCursors[data.userId] = {
-                x: data.x,
-                y: data.y,
-                username: data.username,
-            };
-        }
-
-        // Get canvas coordinates considering panning
-        function getCanvasCoordinates(e) {
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            return { x: x, y: y };
-        }
-
-        // Throttle function to limit event rate
-        function throttle(callback, delay) {
-            let previousCall = new Date().getTime();
-            let timeout = null;
-
-            return function () {
-                const time = new Date().getTime();
-                const args = arguments;
-
-                if (time - previousCall >= delay) {
-                    previousCall = time;
-                    callback.apply(null, args);
-                } else {
-                    clearTimeout(timeout);
-                    timeout = setTimeout(function () {
-                        previousCall = new Date().getTime();
-                        callback.apply(null, args);
-                    }, delay - (time - previousCall));
-                }
-            };
-        }
+        history.push(d);
+        socket.emit("draw_line", d);
+        state.lastX = w.x;
+        state.lastY = w.y;
+      }
     }
+    mouse.rawX = x;
+    mouse.rawY = y;
+    throttleCursor(w.x, w.y);
+  }
+
+  function handleEnd() {
+    if (state.isDrawing && ["rect", "circle", "line"].includes(state.tool)) {
+      const w = toWorld(mouse.rawX, mouse.rawY);
+      const d = {
+        type: state.tool === "line" ? "line_shape" : state.tool,
+        x: state.startX,
+        y: state.startY,
+        w: w.x - state.startX,
+        h: w.y - state.startY,
+        color: state.inkColor,
+        size: state.size,
+      };
+      if (Math.abs(d.w) > 2 || Math.abs(d.h) > 2) {
+        history.push(d);
+        socket.emit("draw_shape", d);
+      }
+    }
+    state.isDrawing = false;
+    state.isPanning = false;
+    canvas.style.cursor = state.tool === "pan" ? "grab" : "crosshair";
+  }
+
+  // Listeners
+  canvas.addEventListener("mousedown", (e) =>
+    handleStart(e.clientX, e.clientY, e.button === 2)
+  );
+  window.addEventListener("mousemove", (e) => {
+    // Always handle move to update coords
+    handleMove(e.clientX, e.clientY);
+  });
+  window.addEventListener("mouseup", handleEnd);
+
+  // Touch
+  canvas.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1)
+        handleStart(e.touches[0].clientX, e.touches[0].clientY, false);
+      else if (e.touches.length === 2) {
+        state.isPanning = true;
+        state.isDrawing = false;
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        state.lastTouchDist = dist;
+        mouse.rawX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        mouse.rawY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      }
+    },
+    { passive: false }
+  );
+
+  canvas.addEventListener(
+    "touchmove",
+    (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1)
+        handleMove(e.touches[0].clientX, e.touches[0].clientY);
+      else if (e.touches.length === 2 && state.isPanning) {
+        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        state.panX += cx - mouse.rawX;
+        state.panY += cy - mouse.rawY;
+        const zoom = dist / state.lastTouchDist;
+        const wPos = toWorld(cx, cy);
+        state.scale = Math.min(Math.max(0.1, state.scale * zoom), 10);
+        state.panX = cx - wPos.x * state.scale;
+        state.panY = cy - wPos.y * state.scale;
+        mouse.rawX = cx;
+        mouse.rawY = cy;
+        state.lastTouchDist = dist;
+        updateStats();
+      }
+    },
+    { passive: false }
+  );
+  canvas.addEventListener("touchend", (e) => {
+    if (e.touches.length === 0) handleEnd();
+  });
+
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      const zoom = Math.exp(e.deltaY * -0.001);
+      const wPos = toWorld(e.clientX, e.clientY);
+      state.scale = Math.min(Math.max(0.1, state.scale * zoom), 10);
+      state.panX = e.clientX - wPos.x * state.scale;
+      state.panY = e.clientY - wPos.y * state.scale;
+      updateStats();
+      handleMove(e.clientX, e.clientY); // Update coords instantly
+    },
+    { passive: false }
+  );
+
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && !state.isSpacePressed) {
+      state.isSpacePressed = true;
+      canvas.style.cursor = "grab";
+    }
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.code === "Space") {
+      state.isSpacePressed = false;
+      canvas.style.cursor = state.tool === "pan" ? "grab" : "crosshair";
+      state.isPanning = false;
+    }
+  });
+
+  // UI Logic
+  const presets = [
+    "#ea4335",
+    "#fbbc04",
+    "#34a853",
+    "#4285f4",
+    "#9334e6",
+    "#000000",
+  ];
+  const settingsModal = document.getElementById("settingsModal");
+
+  document.getElementById("joinBtn").addEventListener("click", () => {
+    const name =
+      document.getElementById("usernameInput").value.trim() || "Artist";
+    state.username = name;
+    state.cursorColor = presets[Math.floor(Math.random() * 4)];
+    socket.emit("join_user", { username: name, color: state.cursorColor });
+
+    gsap.to("#loginModal", {
+      opacity: 0,
+      duration: 0.3,
+      onComplete: () => {
+        document.getElementById("loginModal").remove();
+        document.getElementById("uiLayer").classList.remove("hidden");
+        gsap.from(".ui-panel", {
+          y: 20,
+          opacity: 0,
+          stagger: 0.1,
+          ease: "power2.out",
+        });
+      },
+    });
+  });
+
+  document.querySelectorAll(".tool-btn").forEach((btn) => {
+    if (!btn.dataset.tool) return;
+    btn.addEventListener("click", () => {
+      document
+        .querySelectorAll(".tool-btn")
+        .forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.tool = btn.dataset.tool;
+      canvas.style.cursor = state.tool === "pan" ? "grab" : "crosshair";
+    });
+  });
+
+  document
+    .getElementById("inkColor")
+    .addEventListener("input", (e) => (state.inkColor = e.target.value));
+  document
+    .getElementById("sizeSlider")
+    .addEventListener("input", (e) => (state.size = parseInt(e.target.value)));
+
+  document.getElementById("openSettingsBtn").addEventListener("click", () => {
+    document.getElementById("settingsName").value = state.username;
+    renderPresets();
+    settingsModal.classList.remove("hidden");
+    gsap.to(settingsModal, { opacity: 1 });
+    gsap.fromTo(
+      settingsModal.children[0],
+      { scale: 0.95 },
+      { scale: 1, duration: 0.2, ease: "back.out" }
+    );
+  });
+
+  document.getElementById("closeSettings").addEventListener("click", () => {
+    gsap.to(settingsModal, {
+      opacity: 0,
+      duration: 0.2,
+      onComplete: () => settingsModal.classList.add("hidden"),
+    });
+  });
+
+  function renderPresets() {
+    const container = document.getElementById("colorPresets");
+    container.innerHTML = "";
+    presets.forEach((color) => {
+      const div = document.createElement("div");
+      div.className = `color-swatch ${
+        state.cursorColor === color ? "selected" : ""
+      }`;
+      div.style.backgroundColor = color;
+      div.addEventListener("click", () => {
+        state.cursorColor = color;
+        renderPresets();
+      });
+      container.appendChild(div);
+    });
+  }
+
+  document.getElementById("saveSettings").addEventListener("click", () => {
+    const newName = document.getElementById("settingsName").value.trim();
+    if (newName) state.username = newName;
+    socket.emit("update_profile", {
+      username: state.username,
+      color: state.cursorColor,
+    });
+    gsap.to(settingsModal, {
+      opacity: 0,
+      duration: 0.2,
+      onComplete: () => settingsModal.classList.add("hidden"),
+    });
+  });
+
+  // Chat & Users
+  let unreadCount = 0;
+  let isChatOpen = false;
+  const chatWin = document.getElementById("chatWindow");
+  const badge = document.getElementById("unreadBadge");
+
+  function toggleChat() {
+    isChatOpen = !isChatOpen;
+    if (isChatOpen) {
+      unreadCount = 0;
+      updateBadge();
+      chatWin.classList.remove("hidden");
+      document.getElementById("chatToggle").classList.add("scale-0");
+      gsap.fromTo(
+        chatWin,
+        { opacity: 0, scale: 0.9, y: 10 },
+        { opacity: 1, scale: 1, y: 0, duration: 0.3, ease: "back.out(1.2)" }
+      );
+    } else {
+      gsap.to(chatWin, {
+        opacity: 0,
+        scale: 0.9,
+        y: 10,
+        duration: 0.2,
+        onComplete: () => chatWin.classList.add("hidden"),
+      });
+      document.getElementById("chatToggle").classList.remove("scale-0");
+    }
+  }
+
+  function updateBadge() {
+    badge.innerText = unreadCount;
+    if (unreadCount > 0) {
+      badge.classList.remove("hidden");
+      gsap.fromTo(badge, { scale: 1.5 }, { scale: 1, duration: 0.2 });
+    } else badge.classList.add("hidden");
+  }
+
+  document.getElementById("chatToggle").addEventListener("click", toggleChat);
+  document.getElementById("minimizeChat").addEventListener("click", toggleChat);
+
+  document.getElementById("usersToggle").addEventListener("click", () => {
+    const p = document.getElementById("userPanel");
+    if (p.classList.contains("hidden")) {
+      p.classList.remove("hidden");
+      gsap.fromTo(
+        p,
+        { opacity: 0, y: -10, scale: 0.95 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.2 }
+      );
+    } else {
+      gsap.to(p, {
+        opacity: 0,
+        y: -10,
+        scale: 0.95,
+        duration: 0.15,
+        onComplete: () => p.classList.add("hidden"),
+      });
+    }
+  });
+
+  document.getElementById("chatForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const i = document.getElementById("chatInput");
+    if (i.value.trim()) {
+      socket.emit("chat_message", i.value);
+      i.value = "";
+    }
+  });
+
+  // Socket
+  socket.on("init_history", (h) => (history = h));
+  socket.on("draw_line", (d) => history.push(d));
+  socket.on("draw_shape", (d) => history.push(d));
+  socket.on("draw_image", (d) => history.push(d));
+
+  socket.on("update_users", (u) => {
+    document.getElementById("userCount").innerText = u.length;
+    const list = document.getElementById("userList");
+    list.innerHTML = "";
+    u.forEach((user) => {
+      list.innerHTML += `<li class="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition"><div class="w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm" style="background:${user.color}"></div><span class="text-sm text-gray-700 font-medium">${user.username}</span></li>`;
+    });
+  });
+
+  socket.on("chat_message", (d) => {
+    const div = document.createElement("div");
+    div.className = "mb-3 text-xs";
+    div.innerHTML = `<div class="flex items-center gap-2 mb-1"><span class="font-bold text-gray-800">${d.user}</span><span class="text-gray-400 text-[10px]">${d.time}</span></div><div class="bg-gray-50 p-2 rounded-lg rounded-tl-none text-gray-700 inline-block border border-gray-100">${d.text}</div>`;
+    const box = document.getElementById("chatMessages");
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+    if (!isChatOpen) {
+      unreadCount++;
+      updateBadge();
+    }
+  });
+
+  socket.on("cursor_update", (d) => {
+    if (!otherCursors[d.id])
+      otherCursors[d.id] = {
+        x: d.x,
+        y: d.y,
+        tx: d.x,
+        ty: d.y,
+        timestamp: Date.now(),
+      };
+    const c = otherCursors[d.id];
+    c.tx = d.x;
+    c.ty = d.y;
+    c.timestamp = Date.now();
+    if (d.color) c.color = d.color;
+    if (d.username) c.username = d.username;
+  });
+
+  let lastThrottle = 0;
+  function throttleCursor(x, y) {
+    const now = Date.now();
+    if (now - lastThrottle > 40) {
+      socket.emit("cursor_move", { x, y });
+      lastThrottle = now;
+    }
+  }
+
+  function updateStats() {
+    document.getElementById("scaleDisplay").innerText =
+      Math.round(state.scale * 100) + "%";
+  }
+  requestAnimationFrame(render);
 });
